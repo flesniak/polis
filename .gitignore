@@ -1,0 +1,9 @@
+*/*.[oa]
+*.[oa]
+*/moc_*.cpp
+moc_*.cpp
+polis
+*/ui_*.h
+ui_*.h
+Makefile
+*.pro.user
