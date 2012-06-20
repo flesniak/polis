@@ -3,30 +3,19 @@
 
 #include <QtGui>
 
-struct point {
-    unsigned short position;
-    float age;
-};
+class storage;
 
 class gridwidget : public QWidget
 {
     Q_OBJECT
 public:
-    explicit gridwidget(QWidget *parent = 0);
-    bool enableTimer;
+    explicit gridwidget(storage* store, QWidget *parent = 0);
 
 protected:
     void paintEvent(QPaintEvent *);
-    void timerEvent(QTimerEvent *);
-    QVector<point> points;
-
-public slots:
-    void addPoint(unsigned short position);
-    void setGlowDuration(double duration);
-    void clearPoints();
 
 private:
-    double p_glowDuration;
+    storage* p_storage;
 };
 
 #endif // GRIDWIDGET_H

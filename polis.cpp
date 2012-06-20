@@ -1,61 +1,94 @@
 #include "polis.h"
 
+#include <QDebug>
+
 polis::polis(QWidget *parent) : QMainWindow(parent)
 {
     setWindowTitle("PoLis - Positionserkennung mit Lichtschrankengitter");
     setCentralWidget(new QWidget(this));
 
-    grid = new gridwidget(centralWidget());
-    com1 = new communicator("/dev/ttyUSB0",this);
-    com2 = new communicator("/dev/ttyUSB1",this);
+    store = new storage(this);
+    grid = new gridwidget(store,centralWidget());
+    grid->setSizePolicy(QSizePolicy::MinimumExpanding,QSizePolicy::MinimumExpanding);
+    com = new communicator("/dev/ttyUSB0","/dev/ttyUSB1",store,this);
 
-    button_connect = new QPushButton("Verbinden",centralWidget());
-    button_start = new QPushButton("Start",centralWidget());
+    QDockWidget* dw_toolbox = new QDockWidget("Toolbox",this);
+    QWidget* dw_toolbox_widget = new QWidget(dw_toolbox);
+    dw_toolbox->setWidget(dw_toolbox_widget);
+    button_connect = new QPushButton("Verbinden",dw_toolbox_widget);
+    button_start = new QPushButton("Start",dw_toolbox_widget);
     button_start->setEnabled(false);
-    button_stop = new QPushButton("Stop",centralWidget());
+    button_stop = new QPushButton("Stop",dw_toolbox_widget);
     button_stop->setEnabled(false);
-    spinBox_glow = new QDoubleSpinBox(centralWidget());
+    spinBox_glow = new QDoubleSpinBox(dw_toolbox_widget);
     spinBox_glow->setRange(0,10);
+    spinBox_glow->setSuffix("s");
+    spinBox_refreshDelay = new QSpinBox(dw_toolbox_widget);
+    spinBox_refreshDelay->setSuffix("ms");
+    spinBox_refreshDelay->setRange(50,500);
+    spinBox_refreshDelay->setSingleStep(10);
+    spinBox_refreshDelay->setValue(100);
+    checkBox_debugBeams = new QCheckBox(dw_toolbox_widget);
+    checkBox_debugBeams->setText("Beam-Status anzeigen");
+    label_delay = new QLabel(dw_toolbox_widget);
+    addDockWidget(Qt::LeftDockWidgetArea,dw_toolbox);
+    QLabel* label_glowDuration = new QLabel("Nachleuchtzeit",dw_toolbox_widget);
+    QLabel* label_refreshDelay = new QLabel("Anzeigeaktualisierung",dw_toolbox_widget);
 
-    QGridLayout *toolbox_layout = new QGridLayout;
-    toolbox_layout->addWidget(button_start,0,0);
-    toolbox_layout->addWidget(button_stop,0,1);
-    toolbox_layout->addWidget(button_connect,1,0);
-    toolbox_layout->addWidget(spinBox_glow,1,1);
+    QVBoxLayout *toolbox_layout = new QVBoxLayout(dw_toolbox_widget);
+    toolbox_layout->addWidget(button_start);
+    toolbox_layout->addWidget(button_stop);
+    toolbox_layout->addWidget(button_connect);
+    toolbox_layout->addWidget(label_glowDuration);
+    toolbox_layout->addWidget(spinBox_glow);
+    toolbox_layout->addWidget(checkBox_debugBeams);
+    toolbox_layout->addWidget(label_refreshDelay);
+    toolbox_layout->addWidget(spinBox_refreshDelay);
+    toolbox_layout->addWidget(label_delay);
+    toolbox_layout->addStretch();
 
-    QVBoxLayout *layout = new QVBoxLayout(centralWidget());
-    layout->addWidget(grid);
-    layout->addLayout(toolbox_layout);
+    label_debugBeams = new QLabel(centralWidget());
+    label_debugBeams->setVisible(false);
+    label_debugBeams->setSizePolicy(QSizePolicy::Preferred,QSizePolicy::Minimum);
+
+    QVBoxLayout *view_layout = new QVBoxLayout(centralWidget());
+    view_layout->addWidget(grid);
+    view_layout->addWidget(label_debugBeams);
+
+    statusBar();
 
     connect(button_connect,SIGNAL(clicked()),SLOT(toggleConnect()));
     connect(button_start,SIGNAL(clicked()),SLOT(startCom()));
     connect(button_stop,SIGNAL(clicked()),SLOT(stopCom()));
-    connect(com1,SIGNAL(stopped()),SLOT(comStopped()));
-    connect(com2,SIGNAL(stopped()),SLOT(comStopped()));
-    connect(spinBox_glow,SIGNAL(valueChanged(double)),grid,SLOT(setGlowDuration(double)));
-    connect(com1,SIGNAL(bitsComplete()),SLOT(calculate()));
-    connect(com2,SIGNAL(bitsComplete()),SLOT(calculate()));
+    connect(com,SIGNAL(stopped()),SLOT(comStopped()));
+    connect(spinBox_glow,SIGNAL(valueChanged(double)),store,SLOT(setGlowDuration(double)));
+    connect(store,SIGNAL(dataChanged()),grid,SLOT(update()));
+    connect(com,SIGNAL(debugBeams(QString)),SLOT(displayDebugBeams(QString)));
+    connect(checkBox_debugBeams,SIGNAL(toggled(bool)),com,SLOT(setDebugBeams(bool)));
+    connect(checkBox_debugBeams,SIGNAL(toggled(bool)),label_debugBeams,SLOT(setVisible(bool)));
+    connect(com,SIGNAL(delayChanged(int)),SLOT(setDelayLabel(int)));
+    connect(com,SIGNAL(portError(QString)),SLOT(displayPortError(QString)));
+    connect(spinBox_refreshDelay,SIGNAL(valueChanged(int)),store,SLOT(setTimerInterval(int)));
+
+    store->start();
 }
 
 polis::~polis()
 {
     stopCom();
-    if( com1->isRunning() ) {
-        com1->stop();
-        com1->wait(1000);
+    store->quit();
+    store->wait();
+    delete store;
+    if( com->isRunning() ) {
+        com->stop();
+        com->wait(2000);
     }
-    delete com1;
-    if( com2->isRunning() ) {
-        com2->stop();
-        com2->wait(1000);
-    }
-    delete com2;
+    delete com;
 }
 
 void polis::startCom()
 {
-    com1->start();
-    com2->start();
+    com->start();
     button_start->setEnabled(false);
     button_stop->setEnabled(true);
     button_connect->setEnabled(false);
@@ -63,67 +96,24 @@ void polis::startCom()
 
 void polis::stopCom()
 {
-    com1->stop();
-    com2->stop();
-}
-
-void polis::calculate()
-{
-    com1->mutex.lock();
-    com2->mutex.lock();
-
-    QString str;
-    str.append("com1 ");
-        for(int i=0; i < com1->bits.size(); i++)
-            str.append(com1->bits.at(i)?'1':'0');
-        str.append(" com2 ");
-        for(int i=0; i < com2->bits.size(); i++)
-            str.append(com2->bits.at(i)?'1':'0');
-    qDebug() << "calculate" << str;
-
-    grid->enableTimer = false;
-    grid->clearPoints();
-    for(int index1 = 0; index1 < com1->bits.size(); index1++)
-        if( com1->bits.at(index1) )
-            for(int index2 = 0; index2 < com2->bits.size(); index2++)
-                if( com2->bits.at(index2) )
-                    grid->addPoint(38*index1+index2);
-    grid->update();
-    grid->enableTimer = true;
-
-    com1->mutex.unlock();
-    com2->mutex.unlock();
+    com->stop();
 }
 
 void polis::toggleConnect()
 {
-    if( com1->connected() > 0 ) {
-        com1->closeport();
+    if( com->connected() > 0 ) {
+        com->disconnect();
         button_connect->setText("Verbinden");
         button_start->setEnabled(false);
         button_stop->setEnabled(false);
     }
     else {
-        if( com1->openport() == 0 ) { //successful
+        if( com->connect() == 0 ) { //successful
             button_connect->setText("Trennen");
             button_start->setEnabled(true);
         }
         else
-            QMessageBox::critical(centralWidget(),"Verbindungsproblem","Die serielle Schnittstelle 1 konnte nicht verbunden werden!");
-    }
-    if( com2->connected() > 0 ) {
-        com2->closeport();
-        button_connect->setText("Verbinden");
-        button_start->setEnabled(false);
-        button_stop->setEnabled(false);
-    }
-    else {
-        if( com2->openport() == 0 ) { //successful
-            button_connect->setText("Trennen");
-            button_start->setEnabled(true);
-        }
-        else
-            QMessageBox::critical(centralWidget(),"Verbindungsproblem","Die serielle Schnittstelle 2 konnte nicht verbunden werden!");
+            QMessageBox::critical(centralWidget(),"Verbindungsproblem","Die serielle Schnittstelle konnte nicht verbunden werden!");
     }
 }
 
@@ -132,4 +122,20 @@ void polis::comStopped()
     button_start->setEnabled(true);
     button_stop->setEnabled(false);
     button_connect->setEnabled(true);
+}
+
+void polis::displayDebugBeams(QString debugstr)
+{
+    label_debugBeams->setText(debugstr);
+}
+
+void polis::setDelayLabel(int delay)
+{
+    label_delay->setText("Delay: "+QString::number(delay/1000)+"ms");
+}
+
+void polis::displayPortError(QString errorstr)
+{
+    statusBar()->showMessage(errorstr,3000);
+    qDebug() << "[Port-Fehler]" << errorstr;
 }

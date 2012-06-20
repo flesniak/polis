@@ -10,39 +10,49 @@
 #include <stdio.h>
 
 #include <QThread>
-#include <QByteArray>
-#include <QMutex>
-#include <QBitArray>
+
+#include "storage.h"
+
+class QByteArray;
 
 class communicator : public QThread
 {
     Q_OBJECT
+    enum port { portx, porty, portcount };
+
 public:
-    explicit communicator(QString devname, QObject *parent = 0);
-    int openport();
-    void closeport();
-    QBitArray bits;
-    QMutex mutex;
+    explicit communicator(QString xdevname, QString ydevname, storage* store, QObject *parent = 0);
+    int connect();
+    int disconnect();
+    bool connected();
 
 protected:
     void run();
-    int portsend(char* data, int length);
-    QByteArray portread(unsigned int bytes = 16, unsigned int tries = 2);
+    int portsend(port p, char* data, int length);
+    void dataconv(QByteArray datax, QByteArray datay);
+    QByteArray portread(port p, unsigned int bytes = 16);
     QString printhex(char* data, int len);
-    void dataconv(QByteArray data);
+    QString printhex(QByteArray data);
+    bool p_debugBeams;
 
 private:
+    int doConnect(port p);
+    int doDisconnect(port p);
     bool p_stop;
-    QString p_devname;
-    int hserial1;
+    QString p_devname[portcount];
+    int p_serial[portcount];
+    storage* p_storage;
+    unsigned int delay;
 
 public slots:
     void stop();
-    char connected();
+    void setDebugBeams(bool on);
 
 signals:
     void stopped();
-    void bitsComplete();
+    void debugBeams(QString debugstr);
+    void delayChanged(int);
+    void portError(QString errorstr);
 };
 
 #endif // COMMUNICATOR_H

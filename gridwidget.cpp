@@ -1,41 +1,19 @@
 #include "gridwidget.h"
 
 #include <QPainter>
+#include <QVector>
+
+#include "point.h"
+#include "storage.h"
 
 const unsigned char gridsize = 38;
-const unsigned short timerinterval = 100;
-const float startage = -0.2;
 
-gridwidget::gridwidget(QWidget *parent) : QWidget(parent), enableTimer(true)
+gridwidget::gridwidget(storage* store, QWidget *parent) : QWidget(parent), p_storage(store)
 {
     setMinimumSize(200,200);
-    p_glowDuration = 0;
-    startTimer(timerinterval);
 }
 
-void gridwidget::timerEvent(QTimerEvent *)
-{
-    if( !enableTimer )
-        return;
-    if( p_glowDuration > 0 )
-        for(int num=0;num<points.size();num++) {
-            points[num].age += 1.0*timerinterval/1000;
-            if( points.at(num).age >= p_glowDuration ) {
-                points.remove(num);
-                num--;
-            }
-        }
-    update();
-}
-
-void gridwidget::clearPoints()
-{
-    if( p_glowDuration <= 0 )
-        points.clear();
-}
-
-void gridwidget::paintEvent(QPaintEvent *)
-{
+void gridwidget::paintEvent(QPaintEvent *) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing,true);
     painter.fillRect(painter.window(),QColor(Qt::white));
@@ -50,36 +28,15 @@ void gridwidget::paintEvent(QPaintEvent *)
         x+=1.0*(width()-10)/gridsize;
     }
     QColor color = QColor(Qt::black);
-    foreach(point pnt, points) {
+    const QVector<point>* vector = p_storage->data();
+    for(int index=0; index < vector->size(); index++) {
         painter.setBrush(Qt::SolidPattern);
-        if( p_glowDuration > 0 && pnt.age > 0)
-            color.setAlphaF(1.0-pnt.age/p_glowDuration);
+        if( p_storage->glowDuration() > 0 && vector->at(index).age > 0)
+            color.setAlphaF(1.0-vector->at(index).age/p_storage->glowDuration());
         else
             color.setAlphaF(1.0);
         painter.setPen(color);
         painter.setBrush(QBrush(color));
-        painter.drawEllipse(QPointF(1.0*(pnt.position/gridsize+0.5)*(width()-10)/gridsize+5,1.0*(pnt.position%gridsize+0.5)*(height()-10)/gridsize+5-1),(width()-10)/gridsize/2-1,(height()-10)/gridsize/2-1);
+        painter.drawEllipse(QPointF(1.0*(vector->at(index).position/gridsize+0.5)*(width()-10)/gridsize+5,1.0*(vector->at(index).position%gridsize+0.5)*(height()-10)/gridsize+5-1),(width()-10)/gridsize/2-1,(height()-10)/gridsize/2-1);
     }
-}
-
-void gridwidget::addPoint(unsigned short position)
-{
-    bool newposition = true;
-    for(int index = 0; index < points.size(); index++)
-        if( points.at(index).position == position ) {
-            points[index].age = startage;
-            newposition = false;
-        }
-    if( newposition ) {
-        point pnt;
-        pnt.position = position;
-        pnt.age = startage;
-        points.append(pnt);
-    }
-    //update();
-}
-
-void gridwidget::setGlowDuration(double duration)
-{
-    p_glowDuration = duration;
 }

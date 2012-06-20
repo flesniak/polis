@@ -13,10 +13,13 @@ TEMPLATE = app
 SOURCES += main.cpp\
         polis.cpp \
     communicator.cpp \
-    gridwidget.cpp
+    gridwidget.cpp \
+    storage.cpp
 
 HEADERS  += polis.h \
     communicator.h \
-    gridwidget.h
+    gridwidget.h \
+    storage.h \
+    point.h
 
 
