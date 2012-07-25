@@ -7,12 +7,20 @@ static const QByteArray answerConnect = QByteArray("\x30\x30\x0D\x0A");
 static const QByteArray answerAuthenticate = QByteArray("\x30\x32\x0d\x0a");
 static const QByteArray answerDisconnect = QByteArray("\x30\x30\x0D\x0A");
 
-communicator::communicator(QString xdevname, QString ydevname, storage* store, QObject *parent) : QThread(parent), p_debugBeams(false), p_storage(store), delay(20000)
+communicator::communicator(storage* store, QObject *parent)
+    : QThread(parent), p_debugBeams(false), p_storage(store), delay(20000)
 {
-    p_devname[portx] = xdevname;
-    p_devname[porty] = ydevname;
+}
+
+void communicator::setPortConfiguration(portConfiguration pc)
+{
+    p_devname[portx] = "/dev/"+pc.xPort;
+    p_devname[porty] = "/dev/"+pc.yPort;
+    p_baudrate[portx] = pc.xBaudRate;
+    p_baudrate[porty] = pc.yBaudRate;
     p_serial[portx] = -1;
     p_serial[porty] = -1;
+    p_mode = pc.mode;
 }
 
 int communicator::connect() {
@@ -20,7 +28,7 @@ int communicator::connect() {
     int rvy = 0;
     if( rvx >= 0 )
         rvy = doConnect(porty);
-    return rvx+rvy;
+    return rvx+2*rvy;
 }
 
 int communicator::doConnect(port p) {
@@ -40,40 +48,42 @@ int communicator::doConnect(port p) {
 
     struct termios options;
     tcgetattr(p_serial[p], &options);                   //Get the current options for the port
-    cfsetispeed(&options, B9600);                    //Set the baud rates to 9600
-    cfsetospeed(&options, B9600);
+    cfsetispeed(&options, p_baudrate[p]);                    //Set the baud rates to 9600
+    cfsetospeed(&options, p_baudrate[p]);
     options.c_cflag |= (CLOCAL | CREAD);             //Enable the receiver and set local mode
     if(tcsetattr(p_serial[p], TCSANOW, &options) < 0) { //Set the new options for the port
         disconnect();
         return -2; //failed to set options
     }
 
-    int warncount = 0;
-    QByteArray query;
-    QByteArray answer;
-    //Init connection "0x70"
-    query.append('\x70');
-    portsend(p, query.data(), query.size());
-    usleep(delay);
-    answer = portread(p);
-    if( answer != answerConnect ) {
-        emit portError("Antwort auf \"Verbinden\""+printhex(answerConnect)+"erwartet,"+printhex(answer)+"erhalten, setzte trotzdem fort!");
-        warncount++;
-    }
-    usleep(delay);
+    if( p_mode == rs232 ) { //special initalization for rs232
+        int warncount = 0;
+        QByteArray query;
+        QByteArray answer;
+        //Init connection "0x70"
+        query.append('\x70');
+        portsend(p, query.data(), query.size());
+        usleep(delay);
+        answer = portread(p);
+        if( answer != answerConnect ) {
+            emit portError("Antwort auf \"Verbinden\""+printhex(answerConnect)+"erwartet,"+printhex(answer)+"erhalten, setzte trotzdem fort!");
+            warncount++;
+        }
+        usleep(delay);
 
-    //Authenticate "MP55534552"
-    query.clear();
-    query.append("\x4d\x50\x35\x35\x35\x33\x34\x35\x35\x32");
-    query.append("\x0D\x0A");
-    portsend(p, query.data(), query.size());
-    usleep(delay);
-    answer = portread(p);
-    if( answer != answerAuthenticate ) {
-        emit portError("Antwort auf \"Authentifizieren\""+printhex(answerAuthenticate)+"erwartet,"+printhex(answer)+"erhalten, setzte trotzdem fort!");
-        warncount++;
+        //Authenticate "MP55534552"
+        query.clear();
+        query.append("\x4d\x50\x35\x35\x35\x33\x34\x35\x35\x32");
+        query.append("\x0D\x0A");
+        portsend(p, query.data(), query.size());
+        usleep(delay);
+        answer = portread(p);
+        if( answer != answerAuthenticate ) {
+            emit portError("Antwort auf \"Authentifizieren\""+printhex(answerAuthenticate)+"erwartet,"+printhex(answer)+"erhalten, setzte trotzdem fort!");
+            warncount++;
+        }
+        usleep(delay);
     }
-    usleep(delay);
 
     return 0;
 }
@@ -94,15 +104,19 @@ void communicator::run() {
     query.append("\x67\x62"); //getBeamStatus
     query.append("\x0D\x0A");
     while( !p_stop ) {
-        portsend(portx,query.data(), query.size());
-        usleep(delay);
+        if( p_mode == rs232 ) {
+            portsend(portx,query.data(), query.size());
+            usleep(delay);
+        }
         answer[portx].clear();
         answer[portx] = portread(portx);
         answer[portx].chop(2);
         usleep(delay);
 
-        portsend(porty,query.data(), query.size());
-        usleep(delay);
+        if( p_mode == rs232 ) {
+            portsend(porty,query.data(), query.size());
+            usleep(delay);
+        }
         answer[porty].clear();
         answer[porty] = portread(porty);
         answer[porty].chop(2);
@@ -124,16 +138,17 @@ int communicator::doDisconnect(port p) {
     QByteArray answer, query;
     int warncount = 0;
 
-    //Close connection "ME"
-    query.clear();
-    query.append("\x6d\x65");
-    query.append("\x0D\x0A");
-    portsend(p, query.data(), query.size());
-    usleep(delay);
-    answer = portread(p);
-    if( answer != answerDisconnect ) {
-        emit portError("Antwort auf \"Trennen\""+printhex(answerDisconnect)+"erwartet,"+printhex(answer)+"erhalten, setzte trotzdem fort!");
-        warncount++;
+    if( p_mode == rs232 ) { //Close connection "ME"
+        query.clear();
+        query.append("\x6d\x65");
+        query.append("\x0D\x0A");
+        portsend(p, query.data(), query.size());
+        usleep(delay);
+        answer = portread(p);
+        if( answer != answerDisconnect ) {
+            emit portError("Antwort auf \"Trennen\""+printhex(answerDisconnect)+"erwartet,"+printhex(answer)+"erhalten, setzte trotzdem fort!");
+            warncount++;
+        }
     }
 
     if( p_serial[p] > 0 )
@@ -195,6 +210,8 @@ QString communicator::printhex(QByteArray data) {
 }
 
 void communicator::dataconv(QByteArray datax, QByteArray datay) {
+    printhex(datax);
+    printhex(datay);
     QBitArray bits[portcount];
     bits[portx].resize(38);
     bits[porty].resize(38);

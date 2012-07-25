@@ -6,6 +6,7 @@
 #include "communicator.h"
 #include "gridwidget.h"
 #include "storage.h"
+#include "confdlg.h"
 
 class polis : public QMainWindow
 {
@@ -14,6 +15,7 @@ class polis : public QMainWindow
 public:
     polis(QWidget *parent = 0);
     ~polis();
+    void setPortConfiguration(portConfiguration pc);
 
 private:
     storage* store;
@@ -27,12 +29,13 @@ private:
     QLabel* label_delay;
     QCheckBox* checkBox_debugBeams;
     QSpinBox *spinBox_refreshDelay;
+    portConfiguration p_pc;
 
 private slots:
     void stopCom();
     void startCom();
     void comStopped();
-    void toggleConnect();
+    void reconnect();
     void displayDebugBeams(QString debugstr);
     void setDelayLabel(int delay);
     void displayPortError(QString errorstr);

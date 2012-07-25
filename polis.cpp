@@ -10,14 +10,13 @@ polis::polis(QWidget *parent) : QMainWindow(parent)
     store = new storage(this);
     grid = new gridwidget(store,centralWidget());
     grid->setSizePolicy(QSizePolicy::MinimumExpanding,QSizePolicy::MinimumExpanding);
-    com = new communicator("/dev/ttyUSB0","/dev/ttyUSB1",store,this);
+    com = new communicator(store,this);
 
     QDockWidget* dw_toolbox = new QDockWidget("Toolbox",this);
     QWidget* dw_toolbox_widget = new QWidget(dw_toolbox);
     dw_toolbox->setWidget(dw_toolbox_widget);
-    button_connect = new QPushButton("Verbinden",dw_toolbox_widget);
+    button_connect = new QPushButton(trUtf8("Verbindung zurücksetzen"),dw_toolbox_widget);
     button_start = new QPushButton("Start",dw_toolbox_widget);
-    button_start->setEnabled(false);
     button_stop = new QPushButton("Stop",dw_toolbox_widget);
     button_stop->setEnabled(false);
     spinBox_glow = new QDoubleSpinBox(dw_toolbox_widget);
@@ -57,7 +56,7 @@ polis::polis(QWidget *parent) : QMainWindow(parent)
 
     statusBar();
 
-    connect(button_connect,SIGNAL(clicked()),SLOT(toggleConnect()));
+    connect(button_connect,SIGNAL(clicked()),SLOT(reconnect()));
     connect(button_start,SIGNAL(clicked()),SLOT(startCom()));
     connect(button_stop,SIGNAL(clicked()),SLOT(stopCom()));
     connect(com,SIGNAL(stopped()),SLOT(comStopped()));
@@ -82,6 +81,7 @@ polis::~polis()
     if( com->isRunning() ) {
         com->stop();
         com->wait(2000);
+        com->disconnect();
     }
     delete com;
 }
@@ -99,21 +99,20 @@ void polis::stopCom()
     com->stop();
 }
 
-void polis::toggleConnect()
+void polis::reconnect()
 {
-    if( com->connected() > 0 ) {
-        com->disconnect();
-        button_connect->setText("Verbinden");
-        button_start->setEnabled(false);
-        button_stop->setEnabled(false);
-    }
-    else {
-        if( com->connect() == 0 ) { //successful
-            button_connect->setText("Trennen");
-            button_start->setEnabled(true);
-        }
-        else
-            QMessageBox::critical(centralWidget(),"Verbindungsproblem","Die serielle Schnittstelle konnte nicht verbunden werden!");
+    if( com->connected() )
+      com->disconnect();
+    int errorcode = com->connect();
+    switch(errorcode) {
+    case -1 : QMessageBox::critical(centralWidget(),"Verbindungsproblem",trUtf8("Die serielle Schnittstelle %1 konnte nicht geöffnet werden!").arg(p_pc.xPort));
+              break;
+    case -2 : QMessageBox::critical(centralWidget(),"Verbindungsproblem",trUtf8("Konnte Einstellung für serielle Schnittstelle %1 nicht setzen!").arg(p_pc.xPort));
+              break;
+    case -3 : QMessageBox::critical(centralWidget(),"Verbindungsproblem",trUtf8("Die serielle Schnittstelle %1 konnte nicht geöffnet werden!").arg(p_pc.yPort));
+              break;
+    case -4 : QMessageBox::critical(centralWidget(),"Verbindungsproblem",trUtf8("Konnte Einstellung für serielle Schnittstelle %1 nicht setzen!").arg(p_pc.yPort));
+              break;
     }
 }
 
@@ -138,4 +137,11 @@ void polis::displayPortError(QString errorstr)
 {
     statusBar()->showMessage(errorstr,3000);
     qDebug() << "[Port-Fehler]" << errorstr;
+}
+
+void polis::setPortConfiguration(portConfiguration pc)
+{
+    p_pc = pc;
+    com->setPortConfiguration(p_pc);
+    reconnect();
 }

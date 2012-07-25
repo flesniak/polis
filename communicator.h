@@ -12,6 +12,7 @@
 #include <QThread>
 
 #include "storage.h"
+#include "confdlg.h"
 
 class QByteArray;
 
@@ -21,10 +22,11 @@ class communicator : public QThread
     enum port { portx, porty, portcount };
 
 public:
-    explicit communicator(QString xdevname, QString ydevname, storage* store, QObject *parent = 0);
+    explicit communicator(storage* store, QObject *parent = 0);
     int connect();
     int disconnect();
     bool connected();
+    void setPortConfiguration(portConfiguration pc);
 
 protected:
     void run();
@@ -40,6 +42,8 @@ private:
     int doDisconnect(port p);
     bool p_stop;
     QString p_devname[portcount];
+    unsigned int p_baudrate[portcount];
+    portmode p_mode;
     int p_serial[portcount];
     storage* p_storage;
     unsigned int delay;

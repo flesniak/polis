@@ -14,12 +14,14 @@ SOURCES += main.cpp\
         polis.cpp \
     communicator.cpp \
     gridwidget.cpp \
-    storage.cpp
+    storage.cpp \
+    confdlg.cpp
 
 HEADERS  += polis.h \
     communicator.h \
     gridwidget.h \
     storage.h \
-    point.h
+    point.h \
+    confdlg.h
 
 
